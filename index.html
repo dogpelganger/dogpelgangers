@@ -2,79 +2,41 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Dogpelgänger</title>
 
 <style>
-body {
-  font-family: system-ui, -apple-system, sans-serif;
-  margin: 0;
-  background: #fff;
-}
-.hero {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  min-height: 100vh;
-}
-.hero img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.panel {
-  padding: 48px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-button {
-  background: #1e6fff;
-  color: white;
-  border: none;
-  padding: 16px 22px;
-  font-size: 18px;
-  border-radius: 10px;
-  cursor: pointer;
-}
-button:hover { background: #1556cc; }
-input[type=file] { display: none; }
-
-.results {
-  margin-top: 32px;
-  display: grid;
-  gap: 20px;
-}
-.match {
-  display: flex;
-  gap: 20px;
-  align-items: center;
-}
-.match img {
-  width: 160px;
-  border-radius: 12px;
-  border: 1px solid #ddd;
-}
-.score {
-  font-size: 14px;
-  color: #444;
-}
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#fff; }
+  .hero { display:grid; grid-template-columns: 1fr 1fr; min-height:100vh; }
+  .hero img { width:100%; height:100%; object-fit:cover; }
+  .panel { padding:48px; display:flex; flex-direction:column; justify-content:center; }
+  button {
+    background:#1e6fff; color:#fff; border:0; padding:16px 22px; font-size:18px;
+    border-radius:10px; cursor:pointer; width: fit-content;
+  }
+  button:hover { background:#1556cc; }
+  .hint { margin-top:10px; font-size: 14px; color:#555; }
+  .results { margin-top:32px; display:grid; gap:20px; }
+  .match { display:flex; gap:20px; align-items:center; }
+  .match img { width:160px; border-radius:12px; border:1px solid #ddd; }
+  .score { font-size:14px; color:#444; }
 </style>
 </head>
 
 <body>
-
 <div class="hero">
   <img src="hero.jpg" alt="Dogpelgänger inspiration"/>
   <div class="panel">
     <h1>Dogpelgänger</h1>
     <p>Upload a photo and find your dog look-alike.</p>
 
-    <label>
-      <button>Find Your Dogpelgänger</button>
-      <input id="fileInput" type="file" accept="image/*"/>
-    </label>
+    <button id="uploadBtn">Find Your Dogpelgänger</button>
+    <div class="hint" id="hint"></div>
 
-    <div id="status"></div>
+    <!-- hidden file input -->
+    <input id="fileInput" type="file" accept="image/*" style="display:none"/>
+
+    <div id="status" class="hint"></div>
     <div id="results" class="results"></div>
   </div>
 </div>
@@ -83,74 +45,113 @@ input[type=file] { display: none; }
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0"></script>
 
 <script>
-const BACKEND_URL = "https://dogpelganger.onrender.com/match";
-const R2_BASE = "https://pub-4b9f9bd46442471da196ba4ed4966ab0.r2.dev";
+  const BACKEND_URL = "https://dogpelganger.onrender.com/match";
+  const R2_BASE = "https://pub-4b9f9bd46442471da196ba4ed4966ab0.r2.dev";
 
-let model;
+  const uploadBtn = document.getElementById("uploadBtn");
+  const fileInput = document.getElementById("fileInput");
+  const statusEl = document.getElementById("status");
+  const resultsEl = document.getElementById("results");
+  const hintEl = document.getElementById("hint");
 
-async function loadModel() {
-  document.getElementById("status").innerText = "Loading model…";
-  model = await mobilenet.load({version: 2, alpha: 1.0});
-  document.getElementById("status").innerText = "";
-}
+  let model = null;
 
-loadModel();
+  async function loadModel() {
+    statusEl.innerText = "Loading model… (first visit may take ~10–20s)";
+    try {
+      model = await mobilenet.load({version: 2, alpha: 1.0});
+      statusEl.innerText = "";
+      hintEl.innerText = "Click the button to upload a photo.";
+    } catch (e) {
+      statusEl.innerText = "Model failed to load. Check your internet or try a different browser.";
+      console.error(e);
+    }
+  }
 
-async function imageToEmbedding(img) {
-  const tensor = tf.browser.fromPixels(img)
-    .resizeBilinear([224, 224])
-    .expandDims(0)
-    .toFloat()
-    .div(255.0);
+  loadModel();
 
-  const activation = model.infer(tensor, true);
-  const embedding = Array.from(await activation.data());
-
-  tensor.dispose();
-  activation.dispose();
-
-  return embedding;
-}
-
-document.getElementById("fileInput").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  document.getElementById("results").innerHTML = "";
-  document.getElementById("status").innerText = "Analyzing photo…";
-
-  const img = new Image();
-  img.src = URL.createObjectURL(file);
-  await img.decode();
-
-  const embedding = await imageToEmbedding(img);
-
-  document.getElementById("status").innerText = "Finding matches…";
-
-  const res = await fetch(BACKEND_URL, {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ embedding, top_k: 6 })
+  // Ensure button always opens the file picker
+  uploadBtn.addEventListener("click", () => {
+    fileInput.value = ""; // allow re-uploading same file
+    fileInput.click();
   });
 
-  const data = await res.json();
-  document.getElementById("status").innerText = "";
+  async function imageToEmbedding(img) {
+    const tensor = tf.browser.fromPixels(img)
+      .resizeBilinear([224, 224])
+      .expandDims(0)
+      .toFloat()
+      .div(255.0);
 
-  const results = document.getElementById("results");
+    const activation = model.infer(tensor, true);
+    const embedding = Array.from(await activation.data());
 
-  data.top_matches.forEach(m => {
-    const div = document.createElement("div");
-    div.className = "match";
-    div.innerHTML = `
-      <img src="${R2_BASE}/${m.dog_image}" />
-      <div>
-        <div class="score"><b>Score:</b> ${m.score.toFixed(3)}</div>
-        <div>${m.dog_image}</div>
-      </div>
-    `;
-    results.appendChild(div);
+    tensor.dispose();
+    activation.dispose();
+
+    return embedding;
+  }
+
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+
+    resultsEl.innerHTML = "";
+
+    if (!model) {
+      statusEl.innerText = "Model still loading… please wait and try again.";
+      return;
+    }
+
+    statusEl.innerText = "Analyzing photo…";
+
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    await img.decode();
+
+    const embedding = await imageToEmbedding(img);
+
+    statusEl.innerText = "Finding matches…";
+
+    let res, data;
+    try {
+      res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ embedding, top_k: 6 })
+      });
+      data = await res.json();
+    } catch (e) {
+      statusEl.innerText = "Request failed. Check your connection.";
+      console.error(e);
+      return;
+    }
+
+    if (!res.ok) {
+      statusEl.innerText = "Backend error: " + (data && data.error ? data.error : res.status);
+      return;
+    }
+
+    statusEl.innerText = "";
+
+    if (!data.top_matches || !data.top_matches.length) {
+      statusEl.innerText = "No matches returned.";
+      return;
+    }
+
+    data.top_matches.forEach(m => {
+      const div = document.createElement("div");
+      div.className = "match";
+      div.innerHTML = `
+        <img src="${R2_BASE}/${m.dog_image}" alt="${m.dog_image}"/>
+        <div>
+          <div class="score"><b>Score:</b> ${Number(m.score).toFixed(3)}</div>
+          <div>${m.dog_image}</div>
+        </div>
+      `;
+      resultsEl.appendChild(div);
+    });
   });
-});
 </script>
 
 </body>
