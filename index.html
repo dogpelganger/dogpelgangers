@@ -10,11 +10,31 @@
   .hero { display:grid; grid-template-columns: 1fr 1fr; min-height:100vh; }
   .hero img { width:100%; height:100%; object-fit:cover; }
   .panel { padding:48px; display:flex; flex-direction:column; justify-content:center; }
-  button {
-    background:#1e6fff; color:#fff; border:0; padding:16px 22px; font-size:18px;
-    border-radius:10px; cursor:pointer; width: fit-content;
+
+  /* Label acts like a button */
+  .uploadLabel {
+    display: inline-block;
+    background:#1e6fff;
+    color:#fff;
+    border:0;
+    padding:16px 22px;
+    font-size:18px;
+    border-radius:10px;
+    cursor:pointer;
+    width: fit-content;
+    user-select: none;
   }
-  button:hover { background:#1556cc; }
+  .uploadLabel:hover { background:#1556cc; }
+
+  /* IMPORTANT: DO NOT use display:none; move it off-screen instead */
+  #fileInput {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+
   .hint { margin-top:10px; font-size: 14px; color:#555; }
   .results { margin-top:32px; display:grid; gap:20px; }
   .match { display:flex; gap:20px; align-items:center; }
@@ -30,11 +50,9 @@
     <h1>Dogpelgänger</h1>
     <p>Upload a photo and find your dog look-alike.</p>
 
-    <button id="uploadBtn">Find Your Dogpelgänger</button>
-    <div class="hint" id="hint"></div>
-
-    <!-- hidden file input -->
-    <input id="fileInput" type="file" accept="image/*" style="display:none"/>
+    <!-- This label triggers the file picker reliably -->
+    <label class="uploadLabel" for="fileInput">Find Your Dogpelgänger</label>
+    <input id="fileInput" type="file" accept="image/*"/>
 
     <div id="status" class="hint"></div>
     <div id="results" class="results"></div>
@@ -48,32 +66,20 @@
   const BACKEND_URL = "https://dogpelganger.onrender.com/match";
   const R2_BASE = "https://pub-4b9f9bd46442471da196ba4ed4966ab0.r2.dev";
 
-  const uploadBtn = document.getElementById("uploadBtn");
   const fileInput = document.getElementById("fileInput");
   const statusEl = document.getElementById("status");
   const resultsEl = document.getElementById("results");
-  const hintEl = document.getElementById("hint");
 
   let model = null;
 
   async function loadModel() {
     statusEl.innerText = "Loading model… (first visit may take ~10–20s)";
-    try {
-      model = await mobilenet.load({version: 2, alpha: 1.0});
-      statusEl.innerText = "";
-      hintEl.innerText = "Click the button to upload a photo.";
-    } catch (e) {
-      statusEl.innerText = "Model failed to load. Check your internet or try a different browser.";
-      console.error(e);
-    }
+    model = await mobilenet.load({version: 2, alpha: 1.0});
+    statusEl.innerText = "";
   }
-
-  loadModel();
-
-  // Ensure button always opens the file picker
-  uploadBtn.addEventListener("click", () => {
-    fileInput.value = ""; // allow re-uploading same file
-    fileInput.click();
+  loadModel().catch(e => {
+    statusEl.innerText = "Model failed to load. Open DevTools Console for details.";
+    console.error(e);
   });
 
   async function imageToEmbedding(img) {
@@ -99,7 +105,7 @@
     resultsEl.innerHTML = "";
 
     if (!model) {
-      statusEl.innerText = "Model still loading… please wait and try again.";
+      statusEl.innerText = "Model still loading… wait a moment and try again.";
       return;
     }
 
@@ -122,7 +128,7 @@
       });
       data = await res.json();
     } catch (e) {
-      statusEl.innerText = "Request failed. Check your connection.";
+      statusEl.innerText = "Request failed. Check your connection and try again.";
       console.error(e);
       return;
     }
